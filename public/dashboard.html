@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" type="image/png" href="/icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <meta name="theme-color" content="#2c3e50">
+</head>
+<body>
+    <div id="app">
+        <div id="loadingScreen" class="screen active">
+            <div class="container"><p>Loading…</p></div>
+        </div>
+
+        <!-- No owner key in this browser -->
+        <div id="noRoomScreen" class="screen">
+            <div class="container">
+                <h1>🔑 Dashboard</h1>
+                <p>Is browser mein koi room nahi mila. Apna secret owner link yahan paste karein, ya naya room banayein.</p>
+                <form id="keyForm">
+                    <div class="form-group">
+                        <input type="text" id="keyInput" placeholder="https://…/dashboard#key=…" autocomplete="off" required>
+                    </div>
+                    <button type="submit" class="btn-primary">Dashboard kholo</button>
+                </form>
+                <a class="text-link" href="/">+ Naya room banao</a>
+            </div>
+        </div>
+
+        <div id="dashboardScreen" class="screen">
+            <div class="admin-header">
+                <div class="admin-header-left">
+                    <h2 id="dashboardTitle">👑 Dashboard</h2>
+                    <span id="totalVisitors" class="header-badge">0 visitors</span>
+                </div>
+                <div class="admin-header-right">
+                    <select id="roomSelect" class="room-select" hidden></select>
+                    <button id="installBtn" class="btn-small btn-ghost" title="Phone / computer par app ki tarah install karein" hidden>📲 <span class="label">Install</span></button>
+                    <button id="notifyBtn" class="btn-small btn-ghost" hidden>🔕 Notifications</button>
+                    <button class="btn-small btn-ghost panel-toggle" data-panel="statsPanel" title="Stats">📊 <span class="label">Stats</span></button>
+                    <button class="btn-small btn-ghost panel-toggle" data-panel="settingsPanel" title="Room settings">⚙️ <span class="label">Settings</span></button>
+                    <button class="btn-small panel-toggle" data-panel="sharePanel" title="Share link">📤 <span class="label">Share</span></button>
+                </div>
+            </div>
+            <div id="sharePanel" class="share-panel panel" hidden></div>
+            <div id="statsPanel" class="share-panel panel" hidden></div>
+            <div id="settingsPanel" class="share-panel panel" hidden>
+                <form id="settingsForm" class="settings-form">
+                    <label>
+                        <span>Aapka sawal / message</span>
+                        <input type="text" id="settingPrompt" maxlength="120" placeholder="Mujhse anonymously baat karo 👀">
+                    </label>
+                    <label>
+                        <span>Relations (har line mein ek, zyada se zyada 12)</span>
+                        <textarea id="settingRelations" rows="5"></textarea>
+                    </label>
+                    <label class="toggle">
+                        <input type="checkbox" id="settingOpen">
+                        <span>Room khula hai (naye visitors aur messages aa sakte hain)</span>
+                    </label>
+                    <label class="toggle">
+                        <input type="checkbox" id="settingFilter">
+                        <span>Gaali filter (buri zabaan ko *** se chhupao)</span>
+                    </label>
+                    <button type="submit" class="btn-small">💾 Save</button>
+                </form>
+            </div>
+
+            <div class="admin-container">
+                <div class="admin-sidebar">
+                    <div class="sidebar-search">
+                        <input type="text" id="searchVisitor" placeholder="🔍 Naam ya relation search karein..." />
+                    </div>
+                    <div class="sidebar-header">
+                        <span>📋 Visitors</span>
+                        <span id="visitorCount" class="count-badge">0</span>
+                    </div>
+                    <div id="visitorsList" class="users-list"></div>
+                </div>
+
+                <div class="admin-chat-area">
+                    <div id="visitorInfo" class="selected-user-info"></div>
+                    <div id="adminMessages" class="messages-container admin-messages"></div>
+                    <div id="typing" class="typing" hidden>typing…</div>
+                    <form id="replyForm" class="chat-input-container admin-input">
+                        <input type="text" id="replyInput" class="message-input" placeholder="Reply likhein..." maxlength="1000" autocomplete="off" disabled>
+                        <button type="submit" class="btn-send" disabled>➤ Reply</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>

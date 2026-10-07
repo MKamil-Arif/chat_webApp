@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: anonymous-chat
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: IP_SALT
+        generateValue: true
+      # Generate with `npx web-push generate-vapid-keys`
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false

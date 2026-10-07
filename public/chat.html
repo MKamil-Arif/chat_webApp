@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anonymous Chat</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" type="image/png" href="/icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <meta name="theme-color" content="#2c3e50">
+</head>
+<body>
+    <div id="app">
+        <div id="loadingScreen" class="screen active">
+            <div class="container"><p>Loading…</p></div>
+        </div>
+
+        <div id="notFoundScreen" class="screen">
+            <div class="container">
+                <h1>😕 Link kaam nahi kar raha</h1>
+                <p>Yeh room mojood nahi hai ya link ghalat hai.</p>
+                <a class="btn-primary btn-link" href="/">Apna room banao</a>
+            </div>
+        </div>
+
+        <!-- Room closed / visitor blocked -->
+        <div id="infoScreen" class="screen">
+            <div class="container">
+                <h1 id="infoTitle"></h1>
+                <p id="infoText"></p>
+                <a class="btn-primary btn-link" href="/">✨ Apna anonymous chat link banao</a>
+            </div>
+        </div>
+
+        <!-- Visitor tells their name and relation -->
+        <div id="joinScreen" class="screen">
+            <div class="container">
+                <h1 id="joinTitle"></h1>
+                <p id="joinPrompt" class="prompt-bubble"></p>
+                <a id="ownRoomBanner" class="own-room-banner" hidden>👑 Yeh aapka apna room hai. Dashboard kholein →</a>
+                <form id="joinForm">
+                    <div class="form-group">
+                        <input type="text" id="visitorName" placeholder="Aapka naam (koi bhi)" maxlength="40" required>
+                    </div>
+                    <div class="form-group">
+                        <select id="visitorRelation" required>
+                            <option value="">Aap inke kya lagte hain?</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn-primary">Chat start karein</button>
+                </form>
+                <p class="privacy-note">🔒 Aapki asli pehchaan (number, account) kisi ko nahi dikhti. Owner sirf woh naam dekhega jo aap likhenge, aur yeh dekh sakta hai ke aap pehle bhi chat kar chuke hain.</p>
+            </div>
+        </div>
+
+        <div id="chatScreen" class="screen">
+            <div class="chat-header">
+                <div>
+                    <h2 id="chatTitle"></h2>
+                    <span id="ownerStatus" class="presence"></span>
+                </div>
+                <button id="exitBtn" class="btn-small">Exit</button>
+            </div>
+            <div id="messagesContainer" class="messages-container"></div>
+            <div id="typing" class="typing" hidden>typing…</div>
+            <div id="closedBanner" class="closed-banner" hidden>🔒 Owner ne room abhi band kiya hua hai. Naye messages nahi ja sakte.</div>
+            <form id="sendForm" class="chat-input-container">
+                <input type="text" id="messageInput" class="message-input" placeholder="Apna message likhein..." maxlength="1000" autocomplete="off">
+                <button type="submit" class="btn-send">Send</button>
+            </form>
+            <a class="make-your-own" href="/">✨ Apna anonymous chat link banao</a>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/chat.js"></script>
+</body>
+</html>

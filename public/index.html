@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anonymous Chat</title>
+    <meta name="description" content="Apna chat room banao, link share karo, aur log aap se anonymously baat karein.">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" type="image/png" href="/icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <meta name="theme-color" content="#2c3e50">
+</head>
+<body>
+    <div id="app">
+        <!-- Create a room -->
+        <div id="createScreen" class="screen active">
+            <div class="container">
+                <h1>👀 Anonymous Chat</h1>
+                <p>Apna room banao, link share karo, aur log aap se anonymously baat karein.</p>
+                <form id="createForm">
+                    <div class="form-group">
+                        <input type="text" id="ownerName" placeholder="Aapka naam" maxlength="40" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="text" id="prompt" placeholder="Mujhse anonymously baat karo 👀" maxlength="120">
+                    </div>
+                    <button type="submit" class="btn-primary">Mera link banao</button>
+                </form>
+                <div id="myRoomsList" class="my-rooms"></div>
+            </div>
+        </div>
+
+        <!-- Room created -->
+        <div id="createdScreen" class="screen">
+            <div class="container scroll">
+                <h1>🎉 Link tayyar hai!</h1>
+                <p>Isay apne status, story ya bio mein share karein.</p>
+
+                <div class="link-box">
+                    <span class="link-label">Aapka chat link</span>
+                    <code id="chatLinkText"></code>
+                </div>
+                <div id="shareArea"></div>
+
+                <div class="secret-box">
+                    <strong>🔑 Secret owner link: kisi ko na dein!</strong>
+                    <p>Isi link se aap kisi bhi phone ya browser par apna dashboard khol sakte hain. Isay kahin save kar lein.</p>
+                    <code id="ownerLinkText"></code>
+                    <button id="copyOwnerLink" class="btn-small" type="button">Copy secret link</button>
+                </div>
+
+                <a id="openDashboard" class="btn-primary btn-link" href="/dashboard">Dashboard kholo →</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/common.js"></script>
+    <script src="/js/home.js"></script>
+</body>
+</html>
