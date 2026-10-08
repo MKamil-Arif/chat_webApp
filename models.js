@@ -21,6 +21,11 @@ const roomSchema = new mongoose.Schema({
   blockedFps: { type: [String], default: [] },
   // How many times the chat link was opened (once per browser session).
   views: { type: Number, default: 0 },
+  // Polling (serverless) mode: bumped on every chat change / settings change,
+  // and when the owner's dashboard last polled (for "owner online").
+  version: { type: Number, default: 0 },
+  settingsVersion: { type: Number, default: 0 },
+  ownerActiveAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -51,6 +56,11 @@ const visitorSchema = new mongoose.Schema({
   }],
   blocked: { type: Boolean, default: false },
   lastMessageAt: { type: Date, default: null },
+  // Polling (serverless) mode: change counter, presence and typing timestamps.
+  version: { type: Number, default: 0 },
+  lastActiveAt: { type: Date, default: null },
+  typingAt: { type: Date, default: null },
+  ownerTypingAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 visitorSchema.index({ room: 1, deviceHash: 1 }, { unique: true });

@@ -1,16 +1,20 @@
 const webpush = require('web-push');
 const { PushSubscription } = require('./models');
+const { getSecrets } = require('./secrets');
 
-// VAPID keys identify this server to browser push services. Generate them once
-// with `npx web-push generate-vapid-keys` and keep them in the environment:
-// if they change, every saved subscription stops working.
-let publicKey = process.env.VAPID_PUBLIC_KEY;
-let privateKey = process.env.VAPID_PRIVATE_KEY;
-if (!publicKey || !privateKey) {
-  ({ publicKey, privateKey } = webpush.generateVAPIDKeys());
-  console.warn('⚠️  VAPID keys are not set; using temporary ones. Push subscriptions will break on restart.');
+// VAPID keys identify this server to browser push services (see secrets.js).
+async function vapid() {
+  const { vapidPublicKey, vapidPrivateKey } = await getSecrets();
+  return {
+    subject: process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
+    publicKey: vapidPublicKey,
+    privateKey: vapidPrivateKey,
+  };
 }
-webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@example.com', publicKey, privateKey);
+
+async function publicKey() {
+  return (await vapid()).publicKey;
+}
 
 async function subscribe(roomId, subscription) {
   await PushSubscription.updateOne(
@@ -28,12 +32,14 @@ async function unsubscribe(roomId, endpoint) {
 // subscriptions (404/410 from the push service) are removed.
 async function notifyRoom(roomId, payload) {
   const subscriptions = await PushSubscription.find({ room: roomId });
+  if (subscriptions.length === 0) return;
+  const vapidDetails = await vapid();
   await Promise.all(subscriptions.map(async (sub) => {
     try {
       await webpush.sendNotification(
         { endpoint: sub.endpoint, keys: sub.keys },
         JSON.stringify(payload),
-        { TTL: 60 * 60 * 24 }
+        { TTL: 60 * 60 * 24, vapidDetails }
       );
     } catch (error) {
       if (error.statusCode === 404 || error.statusCode === 410) {
@@ -45,4 +51,4 @@ async function notifyRoom(roomId, payload) {
   }));
 }
 
-module.exports = { publicKey: () => publicKey, subscribe, unsubscribe, notifyRoom };
+module.exports = { publicKey, subscribe, unsubscribe, notifyRoom };

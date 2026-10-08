@@ -34,11 +34,18 @@ the dashboard on any other device. The server stores only a SHA-256 hash of the 
 
 IP addresses are never stored, only salted hashes.
 
-**Real-time (Socket.IO):** new messages, edits and deletes appear instantly, along with
-"typing…", ✓ sent / ✓✓ seen ticks, 🟢 online status for both sides, and unread
-counts (also in the tab title). Sockets only carry small signals; messages are
-still sent and loaded through the REST API, so validation and rate limits stay
-in one place. Presence is kept in memory, so run a **single instance**.
+**Live updates:** new messages, edits and deletes, "typing…", ✓ sent / ✓✓ seen
+ticks, 🟢 online status for both sides, and unread counts (also in the tab title).
+Messages are always sent and loaded through the REST API; live updates only
+carry small "something changed" signals, in one of two modes:
+
+- **Socket.IO** on a normal long-running server (`npm start`): instant.
+- **Polling** on Vercel (serverless functions can't hold sockets): pages check
+  `/api/.../poll` every 3 seconds (15 seconds in a background tab). Each change
+  bumps a version counter in MongoDB, and presence/typing are timestamps there.
+
+`GET /api/config` tells the pages which mode to use. Run `REALTIME=off npm start`
+to try polling mode locally.
 
 **Owner notifications:** the 🔕 Notifications button on the dashboard turns on Web
 Push. With no dashboard open, a new visitor message arrives as a phone or desktop
@@ -64,29 +71,38 @@ sees, and the original text stays stored.
 
 ```bash
 npm install
-cp .env.example .env   # then fill in MONGODB_URI, IP_SALT and the VAPID keys
-npx web-push generate-vapid-keys   # paste the output into .env
+cp .env.example .env   # then fill in MONGODB_URI
 npm run dev
 ```
 
 Open http://localhost:5000.
 
-## Deploy on Render
+## Deploy on Vercel
 
-1. Push this repo to GitHub.
-2. On Render: **New → Blueprint**, then pick the repo. `render.yaml` sets everything up.
-3. Set `MONGODB_URI`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`
-   (`mailto:you@...`) in the Render dashboard. `IP_SALT` is generated automatically.
-   Never change the VAPID keys later.
-4. In MongoDB Atlas → Network Access, allow Render's outbound IPs (or `0.0.0.0/0`).
+`vercel.json` serves `public/` from the CDN and sends every `/api/*` request to
+`api/index.js`, which runs the Express app as a serverless function.
+
+1. In MongoDB Atlas → **Network Access**, allow `0.0.0.0/0`. Vercel has no fixed IPs.
+2. Set `MONGODB_URI` in the Vercel project: either connect MongoDB Atlas from the
+   project's **Storage** tab (Vercel sets the variable itself), or add it under
+   Settings → Environment Variables. `IP_SALT` and the VAPID keys are optional: when
+   they are missing, the app generates them once and keeps them in the database
+   (`secrets.js`).
+3. Deploy with `vercel --prod`, or connect the GitHub repo in Vercel for automatic deploys.
+
+Limits of the serverless mode: rate limits are counted per function instance,
+and polling uses ~20 requests per minute per open chat tab.
 
 ## Project structure
 
 ```
-server.js        Express API + page routes
+server.js        Express API + page routes (exports app; listens when run directly)
+api/index.js     Vercel serverless entry (re-exports the app)
+vercel.json      Vercel rewrites, headers, static output
 models.js        Room, Visitor, Message, PushSubscription schemas
-realtime.js      Socket.IO: auth, presence, typing, seen
+realtime.js      live updates: Socket.IO or polling; presence, typing, seen
 push.js          Web Push (VAPID) notifications
+secrets.js       IP salt + VAPID keys: from env, or generated once and stored in the DB
 profanity.js     bad-word filter (edit the word list here)
 public/
   sw.js          service worker that shows push notifications

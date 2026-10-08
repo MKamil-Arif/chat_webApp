@@ -8,19 +8,16 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const { Room, Visitor, Message } = require('./models');
 const push = require('./push');
+const { getSecrets } = require('./secrets');
 const { maskProfanity } = require('./profanity');
-const {
-  setupRealtime, notifyOwner, notifyVisitor, notifyAllVisitors, disconnectVisitor, isOwnerOnline, isVisitorOnline,
-} = require('./realtime');
+const realtime = require('./realtime');
+
+const { chatChanged, isOwnerOnline, isVisitorOnline } = realtime;
 
 const MAX_MESSAGE = 1000;
 const MAX_RELATIONS = 12;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
-// Salt for hashing IP addresses so raw IPs are never stored. Set IP_SALT in
-// production, otherwise IP matching resets whenever the server restarts.
-const IP_SALT = process.env.IP_SALT || crypto.randomBytes(16).toString('hex');
-if (!process.env.IP_SALT) console.warn('⚠️  IP_SALT is not set; using a temporary one.');
 
 const app = express();
 app.set('trust proxy', 1); // Render sits behind one proxy
@@ -94,23 +91,22 @@ function publicMessage(msg, { mask = false } = {}) {
   };
 }
 
-// Tell the room's dashboards and the visitor's tabs that a chat changed.
-function chatChanged(roomId, visitorId) {
-  notifyOwner(roomId, 'visitor:changed', { visitorId: String(visitorId) });
-  notifyVisitor(roomId, visitorId, 'messages:changed');
-}
-
 // Push a notification to the owner's devices, but only when no dashboard is
-// open: an open dashboard already shows the message live.
-function pushToOwner(room, visitor, text) {
-  if (isOwnerOnline(room._id)) return;
+// open: an open dashboard already shows the message live. Awaited, because a
+// serverless function may be frozen as soon as the response is sent.
+async function pushToOwner(room, visitor, text) {
+  if (isOwnerOnline(room)) return;
   if (room.filterProfanity) text = maskProfanity(text);
-  push.notifyRoom(room._id, {
-    title: `💬 ${visitor.name} (${visitor.relation})`,
-    body: text.length > 120 ? `${text.slice(0, 117)}…` : text,
-    tag: String(visitor._id),
-    url: `/dashboard?room=${encodeURIComponent(room.slug)}&v=${visitor._id}`,
-  }).catch((error) => console.error('Push failed:', error.message));
+  try {
+    await push.notifyRoom(room._id, {
+      title: `💬 ${visitor.name} (${visitor.relation})`,
+      body: text.length > 120 ? `${text.slice(0, 117)}…` : text,
+      tag: String(visitor._id),
+      url: `/dashboard?room=${encodeURIComponent(room.slug)}&v=${visitor._id}`,
+    });
+  } catch (error) {
+    console.error('Push failed:', error.message);
+  }
 }
 
 // ============================================
@@ -130,6 +126,27 @@ async function findVisitor(slug, deviceId) {
 }
 
 // ============================================
+// DATABASE
+// ============================================
+
+// One connection per process. On Vercel the process (and this promise)
+// survives between requests while the function stays warm.
+let dbPromise = null;
+function connectDb() {
+  if (!dbPromise) {
+    dbPromise = mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 10_000 })
+      .then(() => console.log('✅ MongoDB Connected Successfully!'))
+      .catch((error) => {
+        dbPromise = null; // retry on the next request
+        throw error;
+      });
+  }
+  return dbPromise;
+}
+
+app.use('/api', (req, res, next) => connectDb().then(() => next(), next));
+
+// ============================================
 // RATE LIMITS
 // ============================================
 
@@ -141,7 +158,7 @@ const limiter = (windowMinutes, max) => rateLimit({
   message: { error: 'Bohat zyada requests. Thori der baad try karein.' },
 });
 
-app.use('/api', limiter(15, 1500));
+app.use('/api', limiter(15, 3000)); // polling clients make ~20 requests/minute
 const createRoomLimit = limiter(60, 10);
 const sendLimit = limiter(1, 30);
 
@@ -222,7 +239,8 @@ app.post('/api/rooms/:slug/join', route(async (req, res) => {
 
   const deviceHash = sha256(deviceId);
   const fpHash = isHash(fp) ? sha256(fp) : '';
-  const ipHash = sha256(IP_SALT + req.ip);
+  // IPs are never stored, only salted hashes (salt: see secrets.js).
+  const ipHash = sha256((await getSecrets()).ipSalt + req.ip);
   const now = new Date();
 
   let visitor = await Visitor.findOne({ room: room._id, deviceHash });
@@ -249,7 +267,7 @@ app.post('/api/rooms/:slug/join', route(async (req, res) => {
   }
   await visitor.save();
   await linkSimilarVisitors(visitor);
-  chatChanged(room._id, visitor._id);
+  await chatChanged(room._id, visitor._id);
 
   res.json({ name: visitor.name, relation: visitor.relation });
 }));
@@ -278,8 +296,8 @@ app.post('/api/rooms/:slug/messages', sendLimit, requireVisitor, route(async (re
     aliasRelation: req.visitor.relation,
   });
   await Visitor.updateOne({ _id: req.visitor._id }, { lastMessageAt: message.createdAt });
-  chatChanged(req.room._id, req.visitor._id);
-  pushToOwner(req.room, req.visitor, text);
+  await chatChanged(req.room._id, req.visitor._id);
+  await pushToOwner(req.room, req.visitor, text);
   res.status(201).json(publicMessage(message));
 }));
 
@@ -292,8 +310,24 @@ app.put('/api/rooms/:slug/messages/:id', requireVisitor, route(async (req, res) 
     { new: true }
   );
   if (!message) return res.status(404).json({ error: 'Message nahi mila.' });
-  chatChanged(req.room._id, req.visitor._id);
+  await chatChanged(req.room._id, req.visitor._id);
   res.json(publicMessage(message));
+}));
+
+// Polling mode (serverless): what changed since the last poll, plus typing
+// and seen, which socket clients send over the socket instead.
+app.get('/api/rooms/:slug/poll', requireVisitor, route(async (req, res) => {
+  res.json(await realtime.visitorSnapshot(req.room, req.visitor));
+}));
+
+app.post('/api/rooms/:slug/typing', requireVisitor, route(async (req, res) => {
+  await realtime.visitorTyping(req.room._id, req.visitor._id);
+  res.status(204).end();
+}));
+
+app.post('/api/rooms/:slug/seen', requireVisitor, route(async (req, res) => {
+  await realtime.markSeenByVisitor(req.room._id, req.visitor._id);
+  res.status(204).end();
 }));
 
 // ============================================
@@ -328,7 +362,7 @@ app.patch('/api/owner/room', requireOwner, route(async (req, res) => {
   if (typeof body.filterProfanity === 'boolean') room.filterProfanity = body.filterProfanity;
 
   await room.save();
-  notifyAllVisitors(room._id, 'room:changed');
+  await realtime.roomSettingsChanged(room._id);
   res.json(roomSettings(room));
 }));
 
@@ -360,7 +394,7 @@ app.get('/api/owner/visitors', requireOwner, route(async (req, res) => {
       .map((l) => ({ _id: l.visitor._id, name: l.visitor.name, relation: l.visitor.relation, reason: l.reason })),
     messageCount: countById.get(String(v._id))?.count || 0,
     unread: countById.get(String(v._id))?.unread || 0,
-    online: isVisitorOnline(v._id),
+    online: isVisitorOnline(v),
     blocked: v.blocked,
     lastMessageAt: v.lastMessageAt,
     createdAt: v.createdAt,
@@ -388,7 +422,7 @@ app.post('/api/owner/visitors/:id/messages', sendLimit, requireOwner, route(asyn
     aliasName: visitor.name,
     aliasRelation: visitor.relation,
   });
-  chatChanged(req.room._id, visitor._id);
+  await chatChanged(req.room._id, visitor._id);
   res.status(201).json(publicMessage(message));
 }));
 
@@ -401,7 +435,7 @@ app.put('/api/owner/messages/:id', requireOwner, route(async (req, res) => {
     { new: true }
   );
   if (!message) return res.status(404).json({ error: 'Message nahi mila.' });
-  chatChanged(req.room._id, message.visitor);
+  await chatChanged(req.room._id, message.visitor);
   res.json(publicMessage(message));
 }));
 
@@ -409,8 +443,24 @@ app.delete('/api/owner/messages/:id', requireOwner, route(async (req, res) => {
   if (!isId(req.params.id)) return res.status(400).json({ error: 'Ghalat request.' });
   const message = await Message.findOneAndDelete({ _id: req.params.id, room: req.room._id });
   if (!message) return res.status(404).json({ error: 'Message nahi mila.' });
-  chatChanged(req.room._id, message.visitor);
+  await chatChanged(req.room._id, message.visitor);
   res.json({ success: true });
+}));
+
+app.get('/api/owner/poll', requireOwner, route(async (req, res) => {
+  res.json(await realtime.ownerSnapshot(req.room));
+}));
+
+app.post('/api/owner/visitors/:id/typing', requireOwner, route(async (req, res) => {
+  if (!isId(req.params.id)) return res.status(400).json({ error: 'Ghalat request.' });
+  await realtime.ownerTyping(req.room._id, req.params.id);
+  res.status(204).end();
+}));
+
+app.post('/api/owner/visitors/:id/seen', requireOwner, route(async (req, res) => {
+  if (!isId(req.params.id)) return res.status(400).json({ error: 'Ghalat request.' });
+  await realtime.markSeenByOwner(req.room._id, req.params.id);
+  res.status(204).end();
 }));
 
 // Block or unblock a visitor. Blocking also remembers their fingerprint, so
@@ -426,8 +476,8 @@ app.post('/api/owner/visitors/:id/block', requireOwner, route(async (req, res) =
     const update = visitor.blocked ? { $addToSet: { blockedFps: visitor.fpHash } } : { $pull: { blockedFps: visitor.fpHash } };
     await Room.updateOne({ _id: req.room._id }, update);
   }
-  if (visitor.blocked) disconnectVisitor(req.room._id, visitor._id);
-  notifyOwner(req.room._id, 'visitor:changed', { visitorId: String(visitor._id) });
+  if (visitor.blocked) realtime.disconnectVisitor(req.room._id, visitor._id);
+  await chatChanged(req.room._id, visitor._id);
   res.json({ blocked: visitor.blocked });
 }));
 
@@ -480,7 +530,10 @@ app.get('/api/owner/stats', requireOwner, route(async (req, res) => {
 // PUSH NOTIFICATIONS (owner)
 // ============================================
 
-app.get('/api/push/key', (req, res) => res.json({ publicKey: push.publicKey() }));
+// Tells pages whether to use Socket.IO or polling.
+app.get('/api/config', (req, res) => res.json({ realtime: realtime.socketsEnabled() }));
+
+app.get('/api/push/key', route(async (req, res) => res.json({ publicKey: await push.publicKey() })));
 
 app.post('/api/owner/push/subscribe', requireOwner, route(async (req, res) => {
   const { endpoint, keys } = req.body.subscription || {};
@@ -521,16 +574,20 @@ app.use((err, req, res, next) => {
 // START
 // ============================================
 
-const PORT = process.env.PORT || 5000;
-const server = http.createServer(app);
-setupRealtime(server, { findOwnerRoom, findVisitor });
+// Vercel imports `app` as a serverless function (see api/index.js): no
+// listening and no Socket.IO there. Run directly, it is a normal server.
+module.exports = app;
 
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => {
-    console.log('✅ MongoDB Connected Successfully!');
-    server.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
-  })
-  .catch((err) => {
-    console.error('❌ MongoDB Connection Error:', err.message);
-    process.exit(1);
-  });
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  const server = http.createServer(app);
+  // REALTIME=off simulates Vercel's polling mode locally.
+  if (process.env.REALTIME !== 'off') realtime.setupRealtime(server, { findOwnerRoom, findVisitor });
+
+  connectDb()
+    .then(() => server.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`)))
+    .catch((err) => {
+      console.error('❌ MongoDB Connection Error:', err.message);
+      process.exit(1);
+    });
+}

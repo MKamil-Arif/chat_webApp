@@ -269,10 +269,132 @@ function renderMessageList(container, messages, { isMine, senderLabel, actions, 
 // ============================================
 
 // Socket.IO connection; `io` comes from /socket.io/socket.io.js.
+// Two transports with the same events:
+// - Socket.IO when the server supports it (local, any long-running server)
+// - polling every few seconds on serverless hosts (Vercel), via /api/.../poll
+// The server's /api/config says which one to use.
+
+let realtimeModePromise = null;
+function realtimeMode() {
+    if (!realtimeModePromise) {
+        realtimeModePromise = api('/config')
+            .then((config) => (config.realtime ? loadScript('/socket.io/socket.io.js').then(() => 'socket') : 'poll'))
+            .catch(() => 'poll');
+    }
+    return realtimeModePromise;
+}
+
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const script = el('script', { src, onload: resolve, onerror: reject });
+        document.head.append(script);
+    });
+}
+
+// Returns right away; the transport is picked in the background.
+// auth: { role: 'visitor', slug, deviceId } or { role: 'owner', key }
 function connectSocket(auth, handlers) {
+    const conn = { connected: false, closed: false, impl: null };
+    conn.emit = (event, data) => { if (conn.impl) conn.impl.emit(event, data); };
+    conn.disconnect = () => {
+        conn.closed = true;
+        conn.connected = false;
+        if (conn.impl) conn.impl.disconnect();
+    };
+
+    realtimeMode().then((mode) => {
+        if (conn.closed) return;
+        conn.impl = mode === 'socket' ? socketTransport(auth, handlers, conn) : pollingTransport(auth, handlers, conn);
+    });
+    return conn;
+}
+
+function socketTransport(auth, handlers, conn) {
     const socket = io({ auth });
     for (const [event, handler] of Object.entries(handlers)) socket.on(event, handler);
+    socket.on('connect', () => { conn.connected = true; });
+    socket.on('disconnect', () => { conn.connected = false; });
     return socket;
+}
+
+const POLL_VISIBLE_MS = 3000;
+const POLL_HIDDEN_MS = 15000;
+
+function pollingTransport(auth, handlers, conn) {
+    const call = (name, data) => handlers[name] && handlers[name](data);
+    const visitor = auth.role === 'visitor';
+    const headers = visitor ? { 'X-Device-Id': auth.deviceId } : { Authorization: `Bearer ${auth.key}` };
+    const base = visitor ? `/rooms/${encodeURIComponent(auth.slug)}` : '/owner';
+    const request = (path, method = 'GET') => api(`${base}${path}`, { method, headers });
+
+    let previous = null;
+    let timer = null;
+    let stopped = false;
+
+    // Compare this snapshot with the last one and fire the same events a
+    // socket would have sent.
+    function diff(snap) {
+        if (!previous) {
+            conn.connected = true;
+            call('connect');
+        } else if (snap.version !== previous.version) {
+            call(visitor ? 'messages:changed' : 'visitor:changed', {});
+        }
+
+        if (visitor) {
+            if (previous && snap.settingsVersion !== previous.settingsVersion) call('room:changed');
+            if (!previous || snap.ownerOnline !== previous.ownerOnline) call('owner:presence', { online: snap.ownerOnline });
+            if (snap.ownerTyping) call('typing');
+        } else {
+            const before = new Set(previous ? previous.online : []);
+            const now = new Set(snap.online);
+            for (const id of now) if (!before.has(id)) call('presence', { visitorId: id, online: true });
+            for (const id of before) if (!now.has(id)) call('presence', { visitorId: id, online: false });
+            for (const id of snap.typing) call('typing', { visitorId: id });
+        }
+        previous = snap;
+    }
+
+    async function poll() {
+        if (stopped) return;
+        try {
+            diff(await request('/poll'));
+        } catch (error) {
+            if (error.status === 401 || error.status === 403) {
+                stopped = true;
+                conn.connected = false;
+                call('connect_error', { message: 'unauthorized' });
+                return;
+            }
+            conn.connected = false; // network hiccup: keep trying
+        }
+        if (!stopped) timer = setTimeout(poll, document.visibilityState === 'visible' ? POLL_VISIBLE_MS : POLL_HIDDEN_MS);
+    }
+
+    const onVisible = () => {
+        if (document.visibilityState === 'visible' && !stopped) {
+            clearTimeout(timer);
+            poll();
+        }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    poll();
+
+    return {
+        emit(event, data = {}) {
+            if (stopped) return;
+            let path = null;
+            if (event === 'typing' || event === 'seen') {
+                path = visitor ? `/${event}` : `/visitors/${encodeURIComponent(data.visitorId)}/${event}`;
+            }
+            if (path) request(path, 'POST').catch(() => {});
+        },
+        disconnect() {
+            stopped = true;
+            clearTimeout(timer);
+            document.removeEventListener('visibilitychange', onVisible);
+        },
+    };
 }
 
 // "typing…" bubble that hides itself if no new typing event arrives.
