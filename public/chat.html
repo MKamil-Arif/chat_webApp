@@ -18,9 +18,9 @@
 
         <div id="notFoundScreen" class="screen">
             <div class="container">
-                <h1>😕 Link kaam nahi kar raha</h1>
-                <p>Yeh room mojood nahi hai ya link ghalat hai.</p>
-                <a class="btn-primary btn-link" href="/">Apna room banao</a>
+                <h1>😕 This link doesn't work</h1>
+                <p>This room doesn't exist or the link is wrong.</p>
+                <a class="btn-primary btn-link" href="/">Create your own room</a>
             </div>
         </div>
 
@@ -29,7 +29,7 @@
             <div class="container">
                 <h1 id="infoTitle"></h1>
                 <p id="infoText"></p>
-                <a class="btn-primary btn-link" href="/">✨ Apna anonymous chat link banao</a>
+                <a class="btn-primary btn-link" href="/">✨ Create your own anonymous chat link</a>
             </div>
         </div>
 
@@ -38,19 +38,19 @@
             <div class="container">
                 <h1 id="joinTitle"></h1>
                 <p id="joinPrompt" class="prompt-bubble"></p>
-                <a id="ownRoomBanner" class="own-room-banner" hidden>👑 Yeh aapka apna room hai. Dashboard kholein →</a>
+                <a id="ownRoomBanner" class="own-room-banner" hidden>👑 This is your own room. Open the dashboard →</a>
                 <form id="joinForm">
                     <div class="form-group">
-                        <input type="text" id="visitorName" placeholder="Aapka naam (koi bhi)" maxlength="40" required>
+                        <input type="text" id="visitorName" placeholder="Your name (any name)" maxlength="40" required>
                     </div>
                     <div class="form-group">
                         <select id="visitorRelation" required>
-                            <option value="">Aap inke kya lagte hain?</option>
+                            <option value="">How do you know them?</option>
                         </select>
                     </div>
-                    <button type="submit" class="btn-primary">Chat start karein</button>
+                    <button type="submit" class="btn-primary">Start chatting</button>
                 </form>
-                <p class="privacy-note">🔒 Aapki asli pehchaan (number, account) kisi ko nahi dikhti. Owner sirf woh naam dekhega jo aap likhenge, aur yeh dekh sakta hai ke aap pehle bhi chat kar chuke hain.</p>
+                <p class="privacy-note">🔒 Your real identity (phone number, accounts) is never shown. The owner only sees the name you enter, and can see if you have chatted here before.</p>
             </div>
         </div>
 
@@ -64,12 +64,12 @@
             </div>
             <div id="messagesContainer" class="messages-container"></div>
             <div id="typing" class="typing" hidden>typing…</div>
-            <div id="closedBanner" class="closed-banner" hidden>🔒 Owner ne room abhi band kiya hua hai. Naye messages nahi ja sakte.</div>
+            <div id="closedBanner" class="closed-banner" hidden>🔒 The owner has closed this room. New messages can't be sent.</div>
             <form id="sendForm" class="chat-input-container">
-                <input type="text" id="messageInput" class="message-input" placeholder="Apna message likhein..." maxlength="1000" autocomplete="off">
+                <input type="text" id="messageInput" class="message-input" placeholder="Type your message..." maxlength="1000" autocomplete="off">
                 <button type="submit" class="btn-send">Send</button>
             </form>
-            <a class="make-your-own" href="/">✨ Apna anonymous chat link banao</a>
+            <a class="make-your-own" href="/">✨ Create your own anonymous chat link</a>
         </div>
     </div>
 

@@ -41,7 +41,7 @@ async function init() {
             history.replaceState(null, '', `/dashboard?room=${encodeURIComponent(saved.slug)}`);
         } catch (e) {
             history.replaceState(null, '', '/dashboard');
-            toast('❌ Yeh owner link ghalat hai');
+            toast('❌ This owner link is invalid');
         }
     }
 
@@ -89,7 +89,7 @@ async function init() {
             if (visitorId === selectedId) typing.show();
         },
         connect_error: (error) => {
-            if (error.message === 'unauthorized') toast('❌ Owner key ab valid nahi hai');
+            if (error.message === 'unauthorized') toast('❌ Owner key is no longer valid');
         },
     });
     setupNotifications();
@@ -142,12 +142,12 @@ function setupSharePanel() {
             onclick: async () => {
                 try {
                     await navigator.clipboard.writeText(ownerLink(room));
-                    toast('✅ Secret owner link copy ho gaya');
+                    toast('✅ Secret owner link copied');
                 } catch (e) {
                     window.prompt('Secret owner link:', ownerLink(room));
                 }
             },
-        }, '🔑 Secret owner link copy karein (dusre phone ke liye)'),
+        }, '🔑 Copy secret owner link (to open on another device)'),
     );
 }
 
@@ -157,8 +157,7 @@ function setupPanels() {
         button.addEventListener('click', () => {
             const target = document.getElementById(button.dataset.panel);
             const opening = target.hidden;
-            document.querySelectorAll('.panel').forEach((p) => { p.hidden = true; });
-            document.querySelectorAll('.panel-toggle').forEach((b) => b.classList.remove('on'));
+            closePanels();
             target.hidden = !opening;
             button.classList.toggle('on', opening);
             if (opening && target.id === 'statsPanel') loadStats();
@@ -183,7 +182,7 @@ async function refresh() {
     } catch (error) {
         if (error.status === 401) {
             if (socket) socket.disconnect();
-            toast('❌ Owner key ab valid nahi hai');
+            toast('❌ Owner key is no longer valid');
         }
     }
 }
@@ -205,7 +204,7 @@ function renderVisitors() {
     if (shown.length === 0) {
         visitorsList.replaceChildren(el('div', { className: 'empty-state small' },
             el('div', { className: 'empty-icon' }, '👤'),
-            el('p', {}, visitors.length ? 'Koi visitor nahi mila' : 'Abhi tak koi nahi aaya. Apna link share karein!')));
+            el('p', {}, visitors.length ? 'No visitors found' : 'No visitors yet. Share your link!')));
         return;
     }
 
@@ -217,13 +216,13 @@ function renderVisitors() {
             el('div', { className: 'user-name' }, v.name),
             el('div', { className: 'user-relation' }, v.relation),
             el('div', { className: 'identity-badges' },
-                v.aliases.length > 1 && el('span', { className: 'badge alias', title: 'Is device se kai naam use hue' }, `🔄 ${v.aliases.length} naam`),
-                v.links.length > 0 && el('span', { className: 'badge link', title: 'Shayad kisi aur visitor jaisa hai' }, '🔗 match'),
+                v.aliases.length > 1 && el('span', { className: 'badge alias', title: 'This device used several names' }, `🔄 ${v.aliases.length} names`),
+                v.links.length > 0 && el('span', { className: 'badge link', title: 'Looks like another visitor' }, '🔗 match'),
                 v.blocked && el('span', { className: 'badge blocked', title: 'Blocked' }, '🚫 blocked'))),
         el('div', { className: 'user-meta' },
             el('span', { className: `user-status ${v.online ? 'online' : 'offline'}`, title: v.online ? 'Online' : 'Offline' }),
             v.unread
-                ? el('span', { className: 'user-badge unread', title: 'Naye messages' }, v.unread)
+                ? el('span', { className: 'user-badge unread', title: 'New messages' }, v.unread)
                 : el('span', { className: 'user-badge', title: 'Total messages' }, v.messageCount)),
     )));
 }
@@ -243,11 +242,38 @@ function selectVisitor(id) {
     replyInput.focus();
 }
 
+// Close the open chat and go back to "Select a visitor" (✕ button or Esc).
+function closeChat() {
+    if (!selectedId) return;
+    selectedId = null;
+    typing.hide();
+    replyInput.value = '';
+    replyInput.disabled = true;
+    replyForm.querySelector('button').disabled = true;
+    delete adminMessages.dataset.signature;
+    delete visitorInfo.dataset.signature;
+    showEmptySelection();
+    renderVisitors();
+}
+
+function closePanels() {
+    const open = [...document.querySelectorAll('.panel')].some((p) => !p.hidden);
+    document.querySelectorAll('.panel').forEach((p) => { p.hidden = true; });
+    document.querySelectorAll('.panel-toggle').forEach((b) => b.classList.remove('on'));
+    return open;
+}
+
+// Esc: first close an open panel (Share / Stats / Settings), then the chat.
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !room) return;
+    if (!closePanels()) closeChat();
+});
+
 function showEmptySelection() {
     visitorInfo.replaceChildren(el('div', { className: 'no-user-selected' },
         el('div', { className: 'no-user-icon' }, '💬'),
-        el('h3', {}, 'Kisi visitor ko select karein'),
-        el('p', {}, 'Visitors ki list mein se chunein')));
+        el('h3', {}, 'Select a visitor'),
+        el('p', {}, 'Pick someone from the visitors list')));
     adminMessages.replaceChildren();
 }
 
@@ -263,7 +289,7 @@ function renderVisitorInfo() {
 
     const reasonText = {
         'fingerprint+ip': 'same device + same internet',
-        fingerprint: 'same device type, network alag',
+        fingerprint: 'same device type, different network',
     };
 
     visitorInfo.replaceChildren(el('div', { className: 'selected-user-detail' },
@@ -275,13 +301,13 @@ function renderVisitorInfo() {
                     v.relation,
                     el('span', { className: 'presence dark' }, v.online ? ' · 🟢 online' : '')),
                 v.aliases.length > 1 && el('div', { className: 'identity-line' },
-                    '🔄 Is device se naam: ',
+                    '🔄 Names used on this device: ',
                     v.aliases.map((a, i) => [
                         i > 0 && ' → ',
                         i === v.aliases.length - 1 ? el('strong', {}, aliasText(a)) : aliasText(a),
                     ])),
                 v.links.map((l) => el('div', { className: `identity-line warn ${l.reason === 'fingerprint+ip' ? 'strong' : ''}` },
-                    l.reason === 'fingerprint+ip' ? '⚠️ Shayad yahi banda hai: ' : '🤔 Ho sakta hai yeh bhi ho: ',
+                    l.reason === 'fingerprint+ip' ? '⚠️ Probably the same person as: ' : '🤔 Might also be: ',
                     el('button', { className: 'inline-link', onclick: () => selectVisitor(l._id) }, aliasText(l)),
                     ` (${reasonText[l.reason]})`)),
             )),
@@ -290,16 +316,17 @@ function renderVisitorInfo() {
             el('button', {
                 className: `btn-block ${v.blocked ? 'unblock' : ''}`,
                 onclick: () => toggleBlock(v),
-            }, v.blocked ? '✅ Unblock' : '🚫 Block')),
+            }, v.blocked ? '✅ Unblock' : '🚫 Block'),
+            el('button', { className: 'btn-close', title: 'Close chat (Esc)', ariaLabel: 'Close chat', onclick: closeChat }, '✕')),
     ));
 }
 
 async function toggleBlock(v) {
     const blocking = !v.blocked;
-    if (blocking && !confirm(`"${v.name}" ko block karein? Yeh is device se (incognito mein bhi) message nahi bhej sakega.`)) return;
+    if (blocking && !confirm(`Block "${v.name}"? They won't be able to message you from this device (incognito included).`)) return;
     try {
         await ownerApi(`/visitors/${v._id}/block`, { method: 'POST', body: { blocked: blocking } });
-        toast(blocking ? '🚫 Visitor block ho gaya' : '✅ Visitor unblock ho gaya');
+        toast(blocking ? '🚫 Visitor blocked' : '✅ Visitor unblocked');
         refresh();
     } catch (error) {
         alert(error.message);
@@ -317,18 +344,18 @@ async function loadMessages() {
     if (messages.some((m) => !m.fromOwner)) typing.hide();
     renderMessageList(adminMessages, messages, {
         isMine: (m) => m.fromOwner,
-        senderLabel: (m) => (m.fromOwner ? 'Aap' : m.aliasName),
+        senderLabel: (m) => (m.fromOwner ? 'You' : m.aliasName),
         divider: (m, prev) => {
             const now = `${m.aliasName}|${m.aliasRelation}`;
             return prev && now !== `${prev.aliasName}|${prev.aliasRelation}`
-                ? `🔄 Naya naam rakha: ${m.aliasName} (${m.aliasRelation})`
+                ? `🔄 Changed name to: ${m.aliasName} (${m.aliasRelation})`
                 : null;
         },
         actions: (m) => [
             m.fromOwner && el('button', { title: 'Edit', onclick: () => editMessage(m) }, '✏️'),
             el('button', { title: 'Delete', onclick: () => deleteMessage(m) }, '🗑️'),
         ],
-        emptyText: 'Is visitor ne abhi koi message nahi bheja',
+        emptyText: 'This visitor hasn\'t sent any messages yet',
     });
 
     // Looking at this chat: mark the visitor's messages seen (✓✓ for them).
@@ -356,7 +383,7 @@ replyForm.addEventListener('submit', async (e) => {
 });
 
 async function editMessage(message) {
-    const text = window.prompt('Message edit karein:', message.text);
+    const text = window.prompt('Edit message:', message.text);
     if (!text || !text.trim() || text.trim() === message.text) return;
     try {
         await ownerApi(`/messages/${message._id}`, { method: 'PUT', body: { text: text.trim() } });
@@ -367,7 +394,7 @@ async function editMessage(message) {
 }
 
 async function deleteMessage(message) {
-    if (!confirm('Yeh message delete karein?')) return;
+    if (!confirm('Delete this message?')) return;
     try {
         await ownerApi(`/messages/${message._id}`, { method: 'DELETE' });
         refresh();
@@ -396,7 +423,7 @@ function notifyNewMessages() {
     for (const v of visitors) {
         if (v.unread > (previous.get(v._id) || 0)) {
             swRegistration.showNotification(`💬 ${v.name} (${v.relation})`, {
-                body: `${v.unread} naya message`,
+                body: v.unread === 1 ? '1 new message' : `${v.unread} new messages`,
                 tag: v._id,
                 renotify: true,
                 data: { url: `/dashboard?room=${encodeURIComponent(room.slug)}&v=${v._id}` },
@@ -414,7 +441,7 @@ const pushKey = () => `push:${room.slug}`;
 
 function setNotifyButton(on) {
     notifyBtn.textContent = on ? '🔔 On' : '🔕 Notifications';
-    notifyBtn.title = on ? 'Notifications band karein' : 'Naye message par notification paayein';
+    notifyBtn.title = on ? 'Turn notifications off' : 'Get notified about new messages';
     notifyBtn.classList.toggle('on', on);
 }
 
@@ -459,19 +486,19 @@ async function setupNotifications() {
                 if (subscription) await ownerApi('/push/unsubscribe', { method: 'POST', body: { endpoint: subscription.endpoint } });
                 store.remove(pushKey());
                 setNotifyButton(false);
-                toast('🔕 Notifications band');
+                toast('🔕 Notifications off');
             } else {
                 const permission = await Notification.requestPermission();
                 if (permission !== 'granted') {
-                    toast('Browser settings mein notifications allow karein');
+                    toast('Allow notifications in your browser settings');
                     return;
                 }
                 await subscribePush();
                 setNotifyButton(true);
-                toast('🔔 Naye message par notification aayega');
+                toast('🔔 You\'ll be notified about new messages');
             }
         } catch (error) {
-            alert(error.message || 'Notifications on nahi ho sakin');
+            alert(error.message || 'Couldn\'t turn on notifications');
         } finally {
             notifyBtn.disabled = false;
         }
@@ -497,7 +524,7 @@ if ('serviceWorker' in navigator) {
 // ============================================
 
 function applyRoomHeader() {
-    document.getElementById('dashboardTitle').textContent = `👑 ${room.ownerName}${room.isOpen ? '' : ' · 🔒 band'}`;
+    document.getElementById('dashboardTitle').textContent = `👑 ${room.ownerName}${room.isOpen ? '' : ' · 🔒 closed'}`;
 }
 
 function fillSettings() {
@@ -527,7 +554,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
         setupSharePanel(); // the story card / share text use the prompt
         delete adminMessages.dataset.signature; // filter setting changes how messages look
         if (selectedId) loadMessages();
-        toast('✅ Settings save ho gayin');
+        toast('✅ Settings saved');
     } catch (error) {
         alert(error.message);
     } finally {
@@ -588,29 +615,29 @@ async function loadStats() {
             date.setDate(date.getDate() - i);
             days.push({
                 value: counts.get(localDateKey(date)) || 0,
-                label: i === 0 ? 'Aaj' : date.toLocaleDateString([], { weekday: 'short' }),
+                label: i === 0 ? 'Today' : date.toLocaleDateString([], { weekday: 'short' }),
                 title: date.toLocaleDateString([], { day: 'numeric', month: 'short' }),
             });
         }
 
         panel.replaceChildren(
             el('div', { className: 'stat-tiles' },
-                statTile(stats.views, 'Link khula', 'Kitni baar aapka link khola gaya (har browser session mein ek baar)'),
-                statTile(stats.visitors, 'Visitors', `Jinhon ne naam likh kar chat shuru ki (${conversion}% conversion)`),
-                statTile(stats.people, 'Asli log (andaza)', 'Same device + same internet wale visitors ko ek banda gina'),
-                statTile(stats.nameChangers, 'Naam badla', 'Jinhon ne doosre naam se dobara chat ki'),
-                statTile(stats.received, 'Messages aaye'),
-                statTile(stats.replies, 'Aapke replies'),
+                statTile(stats.views, 'Link opens', 'How many times your link was opened (once per browser session)'),
+                statTile(stats.visitors, 'Visitors', `People who entered a name and started chatting (${conversion}% conversion)`),
+                statTile(stats.people, 'Real people (est.)', 'Visitors on the same device + same network are counted as one person'),
+                statTile(stats.nameChangers, 'Changed name', 'Visitors who came back under a different name'),
+                statTile(stats.received, 'Messages received'),
+                statTile(stats.replies, 'Your replies'),
                 statTile(stats.blocked, 'Blocked')),
             el('div', { className: 'stat-charts' },
                 el('div', { className: 'stat-chart' },
-                    el('h4', {}, 'Pichle 7 din: messages aaye'),
+                    el('h4', {}, 'Messages received, last 7 days'),
                     dayColumns(days)),
                 el('div', { className: 'stat-chart' },
-                    el('h4', {}, 'Visitors: relation ke hisaab se'),
+                    el('h4', {}, 'Visitors by relation'),
                     stats.byRelation.length
                         ? barList(stats.byRelation.map((r) => ({ label: r.relation, value: r.count })))
-                        : el('p', { className: 'muted' }, 'Abhi koi visitor nahi'))),
+                        : el('p', { className: 'muted' }, 'No visitors yet'))),
         );
     } catch (error) {
         panel.replaceChildren(el('p', { className: 'muted' }, error.message));
@@ -644,7 +671,7 @@ function setupInstall() {
             if (outcome === 'accepted') button.hidden = true;
             installEvent = null;
         } else if (ios) {
-            alert('Safari mein neeche Share button (⬆️) dabayein, phir "Add to Home Screen" chunein. Install ke baad notifications bhi on ho sakti hain.');
+            alert('In Safari, tap the Share button (⬆️), then choose "Add to Home Screen". Once installed, notifications can be turned on too.');
         }
     });
     window.addEventListener('appinstalled', () => { button.hidden = true; });

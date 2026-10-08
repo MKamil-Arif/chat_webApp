@@ -21,8 +21,8 @@ const visitorApi = (path, options = {}) =>
     api(`${roomPath}${path}`, { ...options, headers: { 'X-Device-Id': deviceId } });
 
 const UNAVAILABLE = {
-    blocked: ['🚫 Chat available nahi', 'Yeh chat ab aap ke liye available nahi hai.'],
-    closed: ['🔒 Room abhi band hai', 'Owner ne naye messages band kiye hue hain. Baad mein dobara try karein.'],
+    blocked: ['🚫 Chat not available', 'This chat is no longer available to you.'],
+    closed: ['🔒 This room is closed', 'The owner isn\'t accepting new messages right now. Please try again later.'],
 };
 
 function showUnavailable(code) {
@@ -38,7 +38,7 @@ function showUnavailable(code) {
 
 // Fill the page from the room's public info (also after the owner edits it).
 function applyRoom() {
-    titleBase = `${room.ownerName} se baat karo`;
+    titleBase = `Chat with ${room.ownerName}`;
     document.title = titleBase;
     document.getElementById('joinTitle').textContent = `💬 ${room.ownerName}`;
     document.getElementById('joinPrompt').textContent = room.prompt;
@@ -46,7 +46,7 @@ function applyRoom() {
 
     const selected = relationInput.value;
     relationInput.replaceChildren(
-        el('option', { value: '' }, 'Aap inke kya lagte hain?'),
+        el('option', { value: '' }, 'How do you know them?'),
         ...room.relations.map((r) => el('option', { value: r, selected: r === selected }, r)),
     );
 
@@ -185,12 +185,12 @@ async function loadMessages() {
         if (messages.some((m) => m.fromOwner)) typing.hide();
         renderMessageList(messagesContainer, messages, {
             isMine: (m) => !m.fromOwner,
-            senderLabel: (m) => (m.fromOwner ? `👑 ${room.ownerName}` : 'Aap'),
+            senderLabel: (m) => (m.fromOwner ? `👑 ${room.ownerName}` : 'You'),
             actions: (m) => [!m.fromOwner && el('button', {
                 title: 'Edit message',
                 onclick: () => editMessage(m),
             }, '✏️')],
-            emptyText: `${room.ownerName} ko pehla message bhejein!`,
+            emptyText: `Send ${room.ownerName} your first message!`,
         });
         markSeen(messages);
     } catch (error) {
@@ -231,7 +231,7 @@ sendForm.addEventListener('submit', async (e) => {
 });
 
 async function editMessage(message) {
-    const text = window.prompt('Message edit karein:', message.text);
+    const text = window.prompt('Edit message:', message.text);
     if (!text || !text.trim() || text.trim() === message.text) return;
     try {
         await visitorApi(`/messages/${message._id}`, { method: 'PUT', body: { text: text.trim() } });

@@ -1499,3 +1499,31 @@ button:disabled {
         font-size: 20px;
     }
 }
+
+/* Links styled as small header buttons ("＋ New room") */
+a.btn-small {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-decoration: none;
+}
+
+/* ✕ close button on the open chat */
+.btn-close {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid #dcdde1;
+    background: #ffffff;
+    color: #7f8c8d;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.btn-close:hover {
+    background: #e74c3c;
+    border-color: #e74c3c;
+    color: #ffffff;
+}

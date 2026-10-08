@@ -13,7 +13,7 @@ async function api(path, { method = 'GET', body, headers = {} } = {}) {
     const response = await fetch(`/api${path}`, options);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-        const error = new Error(data.error || 'Connection error. Dobara try karein.');
+        const error = new Error(data.error || 'Connection error. Please try again.');
         error.status = response.status;
         error.code = data.code; // e.g. 'blocked', 'closed'
         throw error;
@@ -113,9 +113,9 @@ function shareButtons(link, text) {
     const copy = async () => {
         try {
             await navigator.clipboard.writeText(link);
-            toast('✅ Link copy ho gaya');
+            toast('✅ Link copied');
         } catch (e) {
-            window.prompt('Yeh link copy karein:', link);
+            window.prompt('Copy this link:', link);
         }
     };
 
@@ -131,7 +131,7 @@ function shareButtons(link, text) {
             className: 'share-btn instagram',
             onclick: async () => {
                 await copy();
-                toast('Instagram story mein "Link" sticker laga kar paste karein');
+                toast('Add a "Link" sticker to your Instagram story and paste it');
             },
         }, 'Instagram'),
         el('button', { className: 'share-btn copy', onclick: copy }, '🔗 Copy link'),
@@ -256,7 +256,7 @@ function renderMessageList(container, messages, { isMine, senderLabel, actions, 
             el('span', { className: 'time' },
                 formatTime(msg.createdAt),
                 msg.editedAt ? ' · edited' : '',
-                mine && el('span', { className: `ticks ${msg.seenAt ? 'seen' : ''}`, title: msg.seenAt ? 'Dekh liya' : 'Bhej diya' }, msg.seenAt ? ' ✓✓' : ' ✓')),
+                mine && el('span', { className: `ticks ${msg.seenAt ? 'seen' : ''}`, title: msg.seenAt ? 'Seen' : 'Sent' }, msg.seenAt ? ' ✓✓' : ' ✓')),
             buttons.length > 0 && el('div', { className: 'actions' }, buttons),
         ));
     });
@@ -521,7 +521,7 @@ function drawStoryCard({ ownerName, prompt, link }) {
     ctx.fill();
     ctx.fillStyle = '#ffffff';
     ctx.font = font(700, 50);
-    ctx.fillText('👇 Link par tap karein', W / 2, pillY + 66);
+    ctx.fillText('👇 Tap the link', W / 2, pillY + 66);
 
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.font = font(500, 40);
@@ -529,7 +529,7 @@ function drawStoryCard({ ownerName, prompt, link }) {
 
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.font = font(500, 38);
-    ctx.fillText('Naam chhupa ke, dil khol ke 💬', W / 2, H - 150);
+    ctx.fillText('Say anything. Stay anonymous. 💬', W / 2, H - 150);
     return canvas;
 }
 
@@ -550,7 +550,7 @@ function storyCardButton(info) {
                 try {
                     await navigator.clipboard.writeText(info.link).catch(() => {});
                     await navigator.share({ files: [file], text: info.link });
-                    toast('Link copy ho gaya: story mein "Link" sticker laga dein');
+                    toast('Link copied: add it to your story with a "Link" sticker');
                 } catch (e) { /* share cancelled */ }
                 return;
             }
@@ -560,8 +560,8 @@ function storyCardButton(info) {
             a.click();
             a.remove();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
-            toast('📸 Story image download ho gayi');
+            toast('📸 Story image downloaded');
         },
-    }, '📸 Story image banao');
+    }, '📸 Create story image');
     return el('div', { className: 'story-card-tool' }, button, preview);
 }

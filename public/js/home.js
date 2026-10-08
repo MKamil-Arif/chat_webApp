@@ -10,7 +10,7 @@ function renderMyRooms() {
     myRoomsList.replaceChildren();
     if (rooms.length === 0) return;
     myRoomsList.append(
-        el('h3', {}, 'Aapke rooms'),
+        el('h3', {}, 'Your rooms'),
         ...rooms.map((room) => el('a', { className: 'my-room', href: `/dashboard?room=${encodeURIComponent(room.slug)}` },
             el('span', {}, `👑 ${room.ownerName}`),
             el('small', {}, `/c/${room.slug}`))),
@@ -48,12 +48,20 @@ function showCreated(room) {
     document.getElementById('copyOwnerLink').onclick = async () => {
         try {
             await navigator.clipboard.writeText(ownerLink(room));
-            toast('✅ Secret link copy ho gaya, isay save kar lein');
+            toast('✅ Secret link copied. Save it somewhere safe');
         } catch (e) {
-            window.prompt('Yeh secret link save karein:', ownerLink(room));
+            window.prompt('Save this secret link:', ownerLink(room));
         }
     };
     showScreen('createdScreen');
 }
+
+// Back to the empty form; the room just created shows up under "Your rooms".
+document.getElementById('createAnother').addEventListener('click', () => {
+    createForm.reset();
+    renderMyRooms();
+    showScreen('createScreen');
+    ownerNameInput.focus();
+});
 
 renderMyRooms();

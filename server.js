@@ -155,7 +155,7 @@ const limiter = (windowMinutes, max) => rateLimit({
   max,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: 'Bohat zyada requests. Thori der baad try karein.' },
+  message: { error: 'Too many requests. Please try again in a little while.' },
 });
 
 app.use('/api', limiter(15, 3000)); // polling clients make ~20 requests/minute
@@ -166,23 +166,23 @@ const sendLimit = limiter(1, 30);
 // AUTH MIDDLEWARE
 // ============================================
 
-const BLOCKED_TEXT = 'Yeh chat ab aap ke liye available nahi hai.';
-const CLOSED_TEXT = 'Yeh room abhi band hai.';
+const BLOCKED_TEXT = 'This chat is no longer available to you.';
+const CLOSED_TEXT = 'This room is closed right now.';
 
 // Owner: "Authorization: Bearer <ownerKey>"
 const requireOwner = route(async (req, res, next) => {
   const match = /^Bearer (\S+)$/.exec(req.get('authorization') || '');
   const room = match && (await findOwnerRoom(match[1]));
-  if (!room) return res.status(401).json({ error: 'Owner key ghalat hai.' });
+  if (!room) return res.status(401).json({ error: 'Invalid owner key.' });
   req.room = room;
   next();
 });
 
 // Visitor: room slug in the URL + "X-Device-Id" header
 const requireVisitor = route(async (req, res, next) => {
-  if (!(await Room.exists({ slug: req.params.slug }))) return res.status(404).json({ error: 'Room nahi mila.' });
+  if (!(await Room.exists({ slug: req.params.slug }))) return res.status(404).json({ error: 'Room not found.' });
   const found = await findVisitor(req.params.slug, req.get('x-device-id'));
-  if (!found) return res.status(401).json({ error: 'Pehle apna naam batayein.' });
+  if (!found) return res.status(401).json({ error: 'Please enter your name first.' });
   if (found.visitor.blocked) return res.status(403).json({ error: BLOCKED_TEXT, code: 'blocked' });
   req.room = found.room;
   req.visitor = found.visitor;
@@ -197,7 +197,7 @@ app.post('/api/rooms', createRoomLimit, route(async (req, res) => {
   const ownerName = cleanText(req.body.ownerName, 1, 40);
   const prompt = req.body.prompt ? cleanText(req.body.prompt, 1, 120) : '';
   if (!ownerName || prompt === null) {
-    return res.status(400).json({ error: 'Naam (1-40) aur sawal (120 tak) characters check karein.' });
+    return res.status(400).json({ error: 'Name must be 1-40 characters and the question up to 120.' });
   }
   const ownerKey = crypto.randomBytes(24).toString('base64url');
   const room = await Room.create({
@@ -211,7 +211,7 @@ app.post('/api/rooms', createRoomLimit, route(async (req, res) => {
 
 app.get('/api/rooms/:slug', route(async (req, res) => {
   const room = await Room.findOne({ slug: req.params.slug });
-  if (!room) return res.status(404).json({ error: 'Room nahi mila.' });
+  if (!room) return res.status(404).json({ error: 'Room not found.' });
   res.json({ ownerName: room.ownerName, prompt: room.prompt, relations: room.relations, isOpen: room.isOpen });
 }));
 
@@ -227,14 +227,14 @@ app.post('/api/rooms/:slug/view', route(async (req, res) => {
 
 app.post('/api/rooms/:slug/join', route(async (req, res) => {
   const room = await Room.findOne({ slug: req.params.slug });
-  if (!room) return res.status(404).json({ error: 'Room nahi mila.' });
+  if (!room) return res.status(404).json({ error: 'Room not found.' });
 
   const name = cleanText(req.body.name, 1, 40);
   if (!room.isOpen) return res.status(403).json({ error: CLOSED_TEXT, code: 'closed' });
   const relation = room.relations.includes(req.body.relation) ? req.body.relation : null;
   const { deviceId, fp } = req.body;
   if (!name || !relation || !isDeviceId(deviceId)) {
-    return res.status(400).json({ error: 'Naam aur relation dono zaroori hain.' });
+    return res.status(400).json({ error: 'Name and relation are both required.' });
   }
 
   const deviceHash = sha256(deviceId);
@@ -287,7 +287,7 @@ app.get('/api/rooms/:slug/messages', requireVisitor, route(async (req, res) => {
 app.post('/api/rooms/:slug/messages', sendLimit, requireVisitor, route(async (req, res) => {
   if (!req.room.isOpen) return res.status(403).json({ error: CLOSED_TEXT, code: 'closed' });
   const text = cleanText(req.body.text, 1, MAX_MESSAGE);
-  if (!text) return res.status(400).json({ error: `Message 1-${MAX_MESSAGE} characters ka ho.` });
+  if (!text) return res.status(400).json({ error: `Message must be 1-${MAX_MESSAGE} characters.` });
   const message = await Message.create({
     room: req.room._id,
     visitor: req.visitor._id,
@@ -303,13 +303,13 @@ app.post('/api/rooms/:slug/messages', sendLimit, requireVisitor, route(async (re
 
 app.put('/api/rooms/:slug/messages/:id', requireVisitor, route(async (req, res) => {
   const text = cleanText(req.body.text, 1, MAX_MESSAGE);
-  if (!text || !isId(req.params.id)) return res.status(400).json({ error: 'Ghalat request.' });
+  if (!text || !isId(req.params.id)) return res.status(400).json({ error: 'Invalid request.' });
   const message = await Message.findOneAndUpdate(
     { _id: req.params.id, visitor: req.visitor._id, fromOwner: false },
     { text, editedAt: new Date() },
     { new: true }
   );
-  if (!message) return res.status(404).json({ error: 'Message nahi mila.' });
+  if (!message) return res.status(404).json({ error: 'Message not found.' });
   await chatChanged(req.room._id, req.visitor._id);
   res.json(publicMessage(message));
 }));
@@ -347,14 +347,14 @@ app.patch('/api/owner/room', requireOwner, route(async (req, res) => {
 
   if (body.prompt !== undefined) {
     const prompt = body.prompt === '' ? '' : cleanText(body.prompt, 1, 120);
-    if (prompt === null) return res.status(400).json({ error: 'Sawal 120 characters tak ho.' });
+    if (prompt === null) return res.status(400).json({ error: 'The question can be up to 120 characters.' });
     room.prompt = prompt;
   }
   if (body.relations !== undefined) {
-    if (!Array.isArray(body.relations)) return res.status(400).json({ error: 'Ghalat relations.' });
+    if (!Array.isArray(body.relations)) return res.status(400).json({ error: 'Invalid relations.' });
     const relations = [...new Set(body.relations.map((r) => cleanText(r, 1, 30)).filter(Boolean))];
     if (relations.length < 1 || relations.length > MAX_RELATIONS) {
-      return res.status(400).json({ error: `1 se ${MAX_RELATIONS} relations rakhein (har ek 30 characters tak).` });
+      return res.status(400).json({ error: `Use 1 to ${MAX_RELATIONS} relations (up to 30 characters each).` });
     }
     room.relations = relations;
   }
@@ -402,7 +402,7 @@ app.get('/api/owner/visitors', requireOwner, route(async (req, res) => {
 }));
 
 app.get('/api/owner/visitors/:id/messages', requireOwner, route(async (req, res) => {
-  if (!isId(req.params.id)) return res.status(400).json({ error: 'Ghalat request.' });
+  if (!isId(req.params.id)) return res.status(400).json({ error: 'Invalid request.' });
   const messages = await Message.find({ room: req.room._id, visitor: req.params.id })
     .sort({ createdAt: 1 })
     .limit(1000);
@@ -411,9 +411,9 @@ app.get('/api/owner/visitors/:id/messages', requireOwner, route(async (req, res)
 
 app.post('/api/owner/visitors/:id/messages', sendLimit, requireOwner, route(async (req, res) => {
   const text = cleanText(req.body.text, 1, MAX_MESSAGE);
-  if (!text || !isId(req.params.id)) return res.status(400).json({ error: `Message 1-${MAX_MESSAGE} characters ka ho.` });
+  if (!text || !isId(req.params.id)) return res.status(400).json({ error: `Message must be 1-${MAX_MESSAGE} characters.` });
   const visitor = await Visitor.findOne({ _id: req.params.id, room: req.room._id });
-  if (!visitor) return res.status(404).json({ error: 'Visitor nahi mila.' });
+  if (!visitor) return res.status(404).json({ error: 'Visitor not found.' });
   const message = await Message.create({
     room: req.room._id,
     visitor: visitor._id,
@@ -428,21 +428,21 @@ app.post('/api/owner/visitors/:id/messages', sendLimit, requireOwner, route(asyn
 
 app.put('/api/owner/messages/:id', requireOwner, route(async (req, res) => {
   const text = cleanText(req.body.text, 1, MAX_MESSAGE);
-  if (!text || !isId(req.params.id)) return res.status(400).json({ error: 'Ghalat request.' });
+  if (!text || !isId(req.params.id)) return res.status(400).json({ error: 'Invalid request.' });
   const message = await Message.findOneAndUpdate(
     { _id: req.params.id, room: req.room._id, fromOwner: true },
     { text, editedAt: new Date() },
     { new: true }
   );
-  if (!message) return res.status(404).json({ error: 'Message nahi mila.' });
+  if (!message) return res.status(404).json({ error: 'Message not found.' });
   await chatChanged(req.room._id, message.visitor);
   res.json(publicMessage(message));
 }));
 
 app.delete('/api/owner/messages/:id', requireOwner, route(async (req, res) => {
-  if (!isId(req.params.id)) return res.status(400).json({ error: 'Ghalat request.' });
+  if (!isId(req.params.id)) return res.status(400).json({ error: 'Invalid request.' });
   const message = await Message.findOneAndDelete({ _id: req.params.id, room: req.room._id });
-  if (!message) return res.status(404).json({ error: 'Message nahi mila.' });
+  if (!message) return res.status(404).json({ error: 'Message not found.' });
   await chatChanged(req.room._id, message.visitor);
   res.json({ success: true });
 }));
@@ -452,13 +452,13 @@ app.get('/api/owner/poll', requireOwner, route(async (req, res) => {
 }));
 
 app.post('/api/owner/visitors/:id/typing', requireOwner, route(async (req, res) => {
-  if (!isId(req.params.id)) return res.status(400).json({ error: 'Ghalat request.' });
+  if (!isId(req.params.id)) return res.status(400).json({ error: 'Invalid request.' });
   await realtime.ownerTyping(req.room._id, req.params.id);
   res.status(204).end();
 }));
 
 app.post('/api/owner/visitors/:id/seen', requireOwner, route(async (req, res) => {
-  if (!isId(req.params.id)) return res.status(400).json({ error: 'Ghalat request.' });
+  if (!isId(req.params.id)) return res.status(400).json({ error: 'Invalid request.' });
   await realtime.markSeenByOwner(req.room._id, req.params.id);
   res.status(204).end();
 }));
@@ -466,9 +466,9 @@ app.post('/api/owner/visitors/:id/seen', requireOwner, route(async (req, res) =>
 // Block or unblock a visitor. Blocking also remembers their fingerprint, so
 // clearing storage or using incognito on the same device doesn't get around it.
 app.post('/api/owner/visitors/:id/block', requireOwner, route(async (req, res) => {
-  if (!isId(req.params.id) || typeof req.body.blocked !== 'boolean') return res.status(400).json({ error: 'Ghalat request.' });
+  if (!isId(req.params.id) || typeof req.body.blocked !== 'boolean') return res.status(400).json({ error: 'Invalid request.' });
   const visitor = await Visitor.findOne({ _id: req.params.id, room: req.room._id });
-  if (!visitor) return res.status(404).json({ error: 'Visitor nahi mila.' });
+  if (!visitor) return res.status(404).json({ error: 'Visitor not found.' });
 
   visitor.blocked = req.body.blocked;
   await visitor.save();
@@ -540,13 +540,13 @@ app.post('/api/owner/push/subscribe', requireOwner, route(async (req, res) => {
   const valid = typeof endpoint === 'string' && /^https:\/\//.test(endpoint) && endpoint.length < 1000
     && keys && typeof keys.p256dh === 'string' && typeof keys.auth === 'string'
     && keys.p256dh.length < 200 && keys.auth.length < 100;
-  if (!valid) return res.status(400).json({ error: 'Ghalat subscription.' });
+  if (!valid) return res.status(400).json({ error: 'Invalid subscription.' });
   await push.subscribe(req.room._id, { endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } });
   res.status(201).json({ success: true });
 }));
 
 app.post('/api/owner/push/unsubscribe', requireOwner, route(async (req, res) => {
-  if (typeof req.body.endpoint !== 'string') return res.status(400).json({ error: 'Ghalat request.' });
+  if (typeof req.body.endpoint !== 'string') return res.status(400).json({ error: 'Invalid request.' });
   await push.unsubscribe(req.room._id, req.body.endpoint);
   res.json({ success: true });
 }));
@@ -567,7 +567,7 @@ app.use((req, res) => res.status(404).sendFile(path.join(PUBLIC_DIR, 'index.html
 app.use((err, req, res, next) => {
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON' });
   console.error(err);
-  res.status(500).json({ error: 'Server error. Thori der baad try karein.' });
+  res.status(500).json({ error: 'Server error. Please try again in a little while.' });
 });
 
 // ============================================
